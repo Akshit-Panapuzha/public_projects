@@ -6,63 +6,74 @@ import (
 	"strconv"
 )
 
-func tasksHandler(w http.ResponseWriter, r *http.Request) {
+type Server struct {
+	store *Store
+	agent *Agent
+}
+
+func NewServer(store *Store, agent *Agent) *Server {
+	return &Server{store: store, agent: agent}
+}
+
+func (sv *Server) tasksHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 
 	case http.MethodGet:
 		idStr := r.URL.Query().Get("id")
-
 		if idStr == "" {
-			json.NewEncoder(w).Encode(tasks)
+			json.NewEncoder(w).Encode(sv.store.ListTasks())
 			return
 		}
 
-		id, _ := strconv.Atoi(idStr)
-
-		for _, t := range tasks {
-			if t.ID == id {
-				json.NewEncoder(w).Encode(t)
-				return
-			}
+		id, err := strconv.Atoi(idStr)
+		if err != nil {
+			http.Error(w, "invalid id", http.StatusBadRequest)
+			return
 		}
 
-		http.Error(w, "Task not found", http.StatusNotFound)
+		t, err := sv.store.GetTask(id)
+		if err != nil {
+			http.Error(w, "Task not found", http.StatusNotFound)
+			return
+		}
+		json.NewEncoder(w).Encode(t)
 
 	case http.MethodPost:
-		var newTask Task
-
-		err := json.NewDecoder(r.Body).Decode(&newTask)
-		if err != nil {
-			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		var in struct {
+			Name string `json:"name"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.Name == "" {
+			http.Error(w, "Invalid JSON (need {\"name\":\"...\"})", http.StatusBadRequest)
 			return
 		}
-
-		created := CreateTask(newTask.Name)
-
+		t := sv.store.CreateTask(in.Name)
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(created)
+		json.NewEncoder(w).Encode(t)
 
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
-func agentHandler(w http.ResponseWriter, r *http.Request) {
+func (sv *Server) agentHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	var input struct {
+	var in struct {
 		Goal string `json:"goal"`
 	}
-
-	err := json.NewDecoder(r.Body).Decode(&input)
-	if err != nil {
-		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.Goal == "" {
+		http.Error(w, "Invalid JSON (need {\"goal\":\"...\"})", http.StatusBadRequest)
 		return
 	}
 
-	response := RunAgent(input.Goal)
-	json.NewEncoder(w).Encode(response)
+	out, err := sv.agent.Run(in.Goal)
+	if err != nil {
+		http.Error(w, "agent error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(out)
 }

@@ -6,9 +6,19 @@ import (
 )
 
 func main() {
-	http.HandleFunc("/tasks", tasksHandler)
-	http.HandleFunc("/agent", agentHandler)
+	store := NewStore()
+
+	openai, err := NewOpenAIClientFromEnv()
+	if err != nil {
+		panic(err)
+	}
+
+	agent := NewAgent(store, openai)
+	server := NewServer(store, agent)
+
+	http.HandleFunc("/tasks", server.tasksHandler)
+	http.HandleFunc("/agent", server.agentHandler)
 
 	fmt.Println("Server running on http://localhost:8080")
-	http.ListenAndServe(":8080", nil)
+	_ = http.ListenAndServe(":8080", nil)
 }

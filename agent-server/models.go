@@ -9,7 +9,3 @@ type Task struct {
 type AgentMemory struct {
 	History []string `json:"history"`
 }
-
-var tasks = []Task{}
-var nextID = 1
-var memory = AgentMemory{}
